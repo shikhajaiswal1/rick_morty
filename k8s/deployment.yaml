@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rickmorty-app
+  labels:
+    app: rickmorty-app
+spec:
+  replicas: 2   # default, can be overridden by HPA
+  selector:
+    matchLabels:
+      app: rickmorty-app
+  template:
+    metadata:
+      labels:
+        app: rickmorty-app
+    spec:
+      containers:
+        - name: app
+          image: rickmorty-app:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rickmorty-secrets
+                  key: db_url
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        - name: log-sidecar
+          image: fluent/fluentd:latest
+          volumeMounts:
+            - name: app-logs
+              mountPath: /var/log/app
+      volumes:
+        - name: app-logs
+          emptyDir: {}

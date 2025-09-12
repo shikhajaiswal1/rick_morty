@@ -26,6 +26,8 @@ from fastapi import Depends
 app = FastAPI()
 
 @app.on_event("startup")
+
+# --- Auto-create DB tables ---
 def on_startup():
     # Ensure tables are created
     Base.metadata.create_all(bind=engine)
