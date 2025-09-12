@@ -67,21 +67,25 @@ def get_characters(
         request: Request,
         sort: str = Query("id", description="Sort by field, use '-' for descending"),
         page: int = Query(1, ge=1, description="Page number"),
-        limit: int = Query(20, ge=1, le=100, description="Results per page")
+        limit: int = Query(20, ge=1, le=100, description="Results per page"),
+        name: str | None = Query(None, description="Filter by character name (partial match)"),
+        status: str | None = Query(None, description="Filter by status: Alive, Dead, unknown"),
+        species: str | None = Query(None, description="Filter by species"),
+        origin: str | None = Query(None, description="Filter by origin (partial match)")
 ):
     """
-    Fetch characters with sorting + pagination.
+    Fetch characters with filtering, sorting, pagination, and caching.
     """
     try:
         db = SessionLocal()
 
-        # Ensure DB is populated
+        # Ensure DB has data
         characters = db.query(Character).all()
         if not characters:
             get_filtered_characters()
             characters = db.query(Character).all()
 
-        # Sorting logic
+        # Sorting setup
         sort_field = sort.lstrip("-")
         order_by = desc if sort.startswith("-") else asc
         if sort_field not in ALLOWED_SORT_FIELDS:
@@ -90,17 +94,36 @@ def get_characters(
                 detail=f"Invalid sort field. Allowed: {', '.join(ALLOWED_SORT_FIELDS)}"
             )
 
-        # Apply sorting & pagination
-        query = db.query(Character).order_by(order_by(getattr(Character, sort_field)))
+        # Base query
+        query = db.query(Character)
+
+        # Apply filters
+        if name:
+            query = query.filter(Character.name.ilike(f"%{name}%"))  # case-insensitive partial match
+        if status:
+            query = query.filter(Character.status == status)
+        if species:
+            query = query.filter(Character.species == species)
+        if origin:
+            query = query.filter(Character.origin.ilike(f"%{origin}%"))
+
+        # Count results
         total = query.count()
-        items = query.offset((page - 1) * limit).limit(limit).all()
+
+        # Apply sorting + pagination
+        items = (
+            query.order_by(order_by(getattr(Character, sort_field)))
+            .offset((page - 1) * limit)
+            .limit(limit)
+            .all()
+        )
         db.close()
 
         return {
             "page": page,
             "limit": limit,
             "total": total,
-            "pages": (total + limit - 1) // limit,  # total number of pages
+            "pages": (total + limit - 1) // limit,
             "results": [
                 {
                     "id": c.id,
@@ -117,7 +140,6 @@ def get_characters(
         raise HTTPException(status_code=503, detail="Database not reachable")
     except Exception:
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
-
 @app.get("/healthcheck")
 def healthcheck():
     try:
