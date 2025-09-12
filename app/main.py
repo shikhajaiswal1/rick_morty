@@ -1,4 +1,9 @@
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc
 from sqlalchemy.exc import OperationalError
@@ -6,15 +11,29 @@ from app.db import SessionLocal
 from app.models import Character
 from app.services import get_filtered_characters
 
+# Initialize FastAPI app
 app = FastAPI()
+
+# Initialize the limiter - use IP address as key
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
+    status_code=429,
+    content={"detail": "Too many requests, please slow down."},
+))
+
+# Register middleware
+app.add_middleware(SlowAPIMiddleware)
 
 ALLOWED_SORT_FIELDS = ["id", "name"]
 
 @app.get("/characters")
-def get_characters(sort: str = Query("id", description="Sort by field, use '-' for descending")):
+@limiter.limit("10/minute")
+def get_characters(request: Request, sort: str = Query("id", description="Sort by field, use '-' for descending")):
     """
     Fetch characters from DB with sorting.
     If DB is empty, data is fetched from Rick & Morty API and saved.
+    Rate limit: 10 requests per minute per IP.
     """
     try:
         db = SessionLocal()
@@ -76,8 +95,6 @@ def get_characters(sort: str = Query("id", description="Sort by field, use '-' f
             status_code=500,
             detail="An unexpected error occurred. Please try again later."
         )
-
-
 
 @app.get("/healthcheck")
 def healthcheck():
