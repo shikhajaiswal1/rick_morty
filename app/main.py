@@ -1,12 +1,16 @@
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import JSONResponse # <-- Use FastAPI's JSONResponse
+from sqlalchemy.orm import Session
+from sqlalchemy import asc, desc
+from sqlalchemy.exc import OperationalError
+
+# Import SlowAPI
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy.orm import Session
-from sqlalchemy import asc, desc
-from sqlalchemy.exc import OperationalError
+
+# Local imports
 from app.db import SessionLocal
 from app.models import Character
 from app.services import get_filtered_characters
@@ -14,19 +18,37 @@ from app.services import get_filtered_characters
 # Initialize FastAPI app
 app = FastAPI()
 
-# Initialize the limiter - use IP address as key
+# Rate limiter setup (based on client IP)
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, lambda request, exc: JSONResponse(
-    status_code=429,
-    content={"detail": "Too many requests, please slow down."},
-))
-
-# Register middleware
 app.add_middleware(SlowAPIMiddleware)
 
+# -------------------------------
+# Rate limit handler (headers + JSON)
+# -------------------------------
+def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too many requests, please slow down."},
+        headers={
+            "X-RateLimit-Limit": str(exc.limit.limit),           # total allowed requests
+            "X-RateLimit-Remaining": str(exc.limit.remaining),   # remaining requests
+            "X-RateLimit-Reset": str(int(exc.reset_in_seconds)), # seconds until reset
+            "Retry-After": str(int(exc.reset_in_seconds))        # retry after seconds
+        }
+    )
+
+# Register handler
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+
+# Constants
 ALLOWED_SORT_FIELDS = ["id", "name"]
 
+
+# -------------------------------
+# Endpoints
+# -------------------------------
 @app.get("/characters")
 @limiter.limit("10/minute")
 def get_characters(request: Request, sort: str = Query("id", description="Sort by field, use '-' for descending")):
