@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi.responses import JSONResponse # <-- Use FastAPI's JSONResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import asc, desc
 from sqlalchemy.exc import OperationalError
