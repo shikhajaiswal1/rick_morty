@@ -51,50 +51,44 @@ ALLOWED_SORT_FIELDS = ["id", "name"]
 # -------------------------------
 @app.get("/characters")
 @limiter.limit("10/minute")
-def get_characters(request: Request, sort: str = Query("id", description="Sort by field, use '-' for descending")):
+def get_characters(
+        request: Request,
+        sort: str = Query("id", description="Sort by field, use '-' for descending"),
+        page: int = Query(1, ge=1, description="Page number"),
+        limit: int = Query(20, ge=1, le=100, description="Results per page")
+):
     """
-    Fetch characters from DB with sorting.
-    If DB is empty, data is fetched from Rick & Morty API and saved.
-    Rate limit: 10 requests per minute per IP.
+    Fetch characters with sorting + pagination.
     """
     try:
         db = SessionLocal()
 
-        # Check if database is empty
+        # Ensure DB is populated
         characters = db.query(Character).all()
         if not characters:
-            # Fetch from external API and save to DB
-            try:
-                get_filtered_characters()
-                characters = db.query(Character).all()
-            except HTTPException as e:
-                raise e
-            except Exception:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Failed to fetch data from external API"
-                )
+            get_filtered_characters()
+            characters = db.query(Character).all()
 
         # Sorting logic
         sort_field = sort.lstrip("-")
         order_by = desc if sort.startswith("-") else asc
-
         if sort_field not in ALLOWED_SORT_FIELDS:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid sort field. Allowed: {', '.join(ALLOWED_SORT_FIELDS)}"
             )
 
-        sorted_characters = (
-            db.query(Character)
-            .order_by(order_by(getattr(Character, sort_field)))
-            .all()
-        )
-
+        # Apply sorting & pagination
+        query = db.query(Character).order_by(order_by(getattr(Character, sort_field)))
+        total = query.count()
+        items = query.offset((page - 1) * limit).limit(limit).all()
         db.close()
 
         return {
-            "count": len(sorted_characters),
+            "page": page,
+            "limit": limit,
+            "total": total,
+            "pages": (total + limit - 1) // limit,  # total number of pages
             "results": [
                 {
                     "id": c.id,
@@ -103,20 +97,14 @@ def get_characters(request: Request, sort: str = Query("id", description="Sort b
                     "species": c.species,
                     "origin": c.origin,
                 }
-                for c in sorted_characters
+                for c in items
             ],
         }
 
     except OperationalError:
-        raise HTTPException(
-            status_code=503,
-            detail="Database is not reachable. Please try again later."
-        )
+        raise HTTPException(status_code=503, detail="Database not reachable")
     except Exception:
-        raise HTTPException(
-            status_code=500,
-            detail="An unexpected error occurred. Please try again later."
-        )
+        raise HTTPException(status_code=500, detail="Unexpected error occurred")
 
 @app.get("/healthcheck")
 def healthcheck():
