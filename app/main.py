@@ -15,8 +15,19 @@ from app.db import SessionLocal
 from app.models import Character
 from app.services import get_filtered_characters
 
+#Setup Cache
+from fastapi_cache import FastAPICache
+from fastapi_cache.backends.inmemory import InMemoryBackend
+from fastapi_cache.decorator import cache
+from fastapi import Depends
+
 # Initialize FastAPI app
 app = FastAPI()
+
+@app.on_event("startup")
+async def startup():
+    # For dev: in-memory cache (resets on restart)
+    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
 
 # Rate limiter setup (based on client IP)
 limiter = Limiter(key_func=get_remote_address)
@@ -51,6 +62,7 @@ ALLOWED_SORT_FIELDS = ["id", "name"]
 # -------------------------------
 @app.get("/characters")
 @limiter.limit("10/minute")
+@cache(expire=60)  # Cache results for 60 seconds
 def get_characters(
         request: Request,
         sort: str = Query("id", description="Sort by field, use '-' for descending"),
