@@ -12,6 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 
 # Local imports
 from app.db import SessionLocal
+from app.db import Base, engine
 from app.models import Character
 from app.services import get_filtered_characters
 
@@ -25,6 +26,10 @@ from fastapi import Depends
 app = FastAPI()
 
 @app.on_event("startup")
+def on_startup():
+    # Ensure tables are created
+    Base.metadata.create_all(bind=engine)
+
 async def startup():
     # For dev: in-memory cache (resets on restart)
     FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
