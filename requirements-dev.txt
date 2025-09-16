@@ -1,0 +1,18 @@
+# Base dependencies
+-r requirements.txt
+
+# Testing
+pytest
+httpx   # async-friendly HTTP client for integration tests
+requests
+
+# Linting & Code Quality
+flake8
+flake8-docstrings
+flake8-import-order
+
+# Security
+bandit
+
+# (Optional but useful)
+coverage   # for test coverage reports

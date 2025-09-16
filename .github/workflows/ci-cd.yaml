@@ -7,11 +7,10 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build-test:
+  lint-security:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -19,19 +18,64 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
-      - name: Run tests
-        run: |
-          pytest --maxfail=1 --disable-warnings -q
+      - name: Run flake8 (linting)
+        run: flake8 app tests
 
-  docker-build-push:
+      - name: Run Bandit (security scan)
+        run: bandit -r app
+
+  build-test-docker:
     runs-on: ubuntu-latest
-    needs: build-test
+    needs: lint-security
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+
+      - name: Build Docker image
+        run: docker build -t rickmorty-app:test .
+
+      - name: Run unit tests in container
+        run: docker run --rm rickmorty-app:test pytest -q
+
+  kind-deploy:
+    runs-on: ubuntu-latest
+    needs: build-test-docker
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1.7.0
+
+      - name: Load Docker image into Kind
+        run: kind load docker-image rickmorty-app:test
+
+      - name: Install Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: "v3.12.0"
+
+      - name: Deploy app with Helm
+        run: |
+          helm upgrade --install rickmorty ./helm/rickmorty-app \
+            --set image.repository=rickmorty-app \
+            --set image.tag=test \
+            --set replicaCount=1
+
+      - name: Wait for rollout
+        run: kubectl rollout status deployment/rickmorty-app --timeout=120s
+
+      - name: Port forward for tests
+        run: kubectl port-forward svc/rickmorty-service 8000:80 &
+
+      - name: Run integration tests
+        run: pytest tests/test_api.py -q
+
+  push-dockerhub:
+    runs-on: ubuntu-latest
+    needs: kind-deploy
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v2
@@ -39,48 +83,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build and push
         run: |
           docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/rickmorty-app:${{ github.sha }} .
-
-      - name: Push Docker image
-        run: |
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/rickmorty-app:${{ github.sha }}
-
-  deploy:
-    runs-on: ubuntu-latest
-    needs: docker-build-push
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v3
-        with:
-          version: "v1.28.0"
-
-      - name: Decode Kubeconfig
-        run: |
-          echo "${{ secrets.KUBE_CONFIG_DATA }}" | base64 --decode > $HOME/.kube/config
-
-      - name: Install Helm
-        uses: azure/setup-helm@v3
-        with:
-          version: "v3.12.0"
-
-      - name: Deploy with Helm
-        run: |
-          helm upgrade --install rickmorty-app ./helm/rickmorty-app \
-            --set image.repository=${{ secrets.DOCKERHUB_USERNAME }}/rickmorty-app \
-            --set image.tag=${{ github.sha }} \
-            --set replicaCount=2
-
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/rickmorty-app --timeout=120s
-
-      - name: Smoke test
-        run: |
-          kubectl port-forward svc/rickmorty-service 8000:80 &
-          sleep 10
-          curl -f http://127.0.0.1:8000/healthcheck
