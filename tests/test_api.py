@@ -9,7 +9,8 @@ def test_healthcheck():
     assert resp.json()["status"] == "healthy"
 
 def test_characters_endpoint():
-    resp = client.get("/characters?limit=5")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "results" in data
+    with TestClient(app) as client:   # <-- IMPORTANT
+        resp = client.get("/characters?limit=5")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "results" in data

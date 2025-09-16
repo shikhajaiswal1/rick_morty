@@ -22,19 +22,21 @@ from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
 from fastapi import Depends
 
+#sqlalchemy.text() wrapper
+from sqlalchemy import text
+
 # Initialize FastAPI app
 app = FastAPI()
 
 @app.on_event("startup")
+async def startup_event():
+    # For dev: in-memory cache (resets on restart)
+    FastAPICache.init(InMemoryBackend(), prefix="rickmorty-cache")
 
 # --- Auto-create DB tables ---
 def on_startup():
     # Ensure tables are created
     Base.metadata.create_all(bind=engine)
-
-async def startup():
-    # For dev: in-memory cache (resets on restart)
-    FastAPICache.init(InMemoryBackend(), prefix="fastapi-cache")
 
 # Rate limiter setup (based on client IP)
 limiter = Limiter(key_func=get_remote_address)
@@ -151,7 +153,7 @@ def get_characters(
 def healthcheck():
     try:
         db = SessionLocal()
-        db.execute("SELECT 1")  # simple test query
+        db.execute(text("SELECT 1"))  # simple test query
         db.close()
         return {"status": "healthy"}
     except OperationalError:
