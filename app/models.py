@@ -2,6 +2,7 @@
 from sqlalchemy import Column, Integer, String
 from app.db import Base
 
+
 class Character(Base):
     __tablename__ = "characters"  # Table name in PostgreSQL
 

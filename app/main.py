@@ -1,6 +1,5 @@
 from fastapi import FastAPI, Query, HTTPException, Request
-from fastapi.responses import JSONResponse # <-- Use FastAPI's JSONResponse
-from sqlalchemy.orm import Session
+from fastapi.responses import JSONResponse  # <-- Use FastAPI's JSONResponse
 from sqlalchemy import asc, desc
 from sqlalchemy.exc import OperationalError
 
@@ -16,27 +15,31 @@ from app.db import Base, engine
 from app.models import Character
 from app.services import get_filtered_characters
 
-#Setup Cache
+# Setup Cache
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.inmemory import InMemoryBackend
 from fastapi_cache.decorator import cache
-from fastapi import Depends
 
-#sqlalchemy.text() wrapper
+# sqlalchemy.text() wrapper
 from sqlalchemy import text
 
 # Initialize FastAPI app
 app = FastAPI()
+
 
 @app.on_event("startup")
 async def startup_event():
     # For dev: in-memory cache (resets on restart)
     FastAPICache.init(InMemoryBackend(), prefix="rickmorty-cache")
 
+
 # --- Auto-create DB tables ---
+
+
 def on_startup():
     # Ensure tables are created
     Base.metadata.create_all(bind=engine)
+
 
 # Rate limiter setup (based on client IP)
 limiter = Limiter(key_func=get_remote_address)
@@ -46,17 +49,24 @@ app.add_middleware(SlowAPIMiddleware)
 # -------------------------------
 # Rate limit handler (headers + JSON)
 # -------------------------------
+
+
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
         content={"detail": "Too many requests, please slow down."},
         headers={
-            "X-RateLimit-Limit": str(exc.limit.limit),           # total allowed requests
-            "X-RateLimit-Remaining": str(exc.limit.remaining),   # remaining requests
-            "X-RateLimit-Reset": str(int(exc.reset_in_seconds)), # seconds until reset
-            "Retry-After": str(int(exc.reset_in_seconds))        # retry after seconds
-        }
+            # total allowed requests
+            "X-RateLimit-Limit": str(exc.limit.limit),
+            # remaining requests
+            "X-RateLimit-Remaining": str(exc.limit.remaining),
+            # seconds until reset
+            "X-RateLimit-Reset": str(int(exc.reset_in_seconds)),
+            # retry after seconds
+            "Retry-After": str(int(exc.reset_in_seconds)),
+        },
     )
+
 
 # Register handler
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
@@ -73,14 +83,18 @@ ALLOWED_SORT_FIELDS = ["id", "name"]
 @limiter.limit("10/minute")
 @cache(expire=60)  # Cache results for 60 seconds
 def get_characters(
-        request: Request,
-        sort: str = Query("id", description="Sort by field, use '-' for descending"),
-        page: int = Query(1, ge=1, description="Page number"),
-        limit: int = Query(20, ge=1, le=100, description="Results per page"),
-        name: str | None = Query(None, description="Filter by character name (partial match)"),
-        status: str | None = Query(None, description="Filter by status: Alive, Dead, unknown"),
-        species: str | None = Query(None, description="Filter by species"),
-        origin: str | None = Query(None, description="Filter by origin (partial match)")
+    request: Request,
+    sort: str = Query("id", description="Sort by field, use '-' for descending"),
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    name: str | None = Query(
+        None, description="Filter by character name (partial match)"
+    ),
+    status: str | None = Query(
+        None, description="Filter by status: Alive, Dead, unknown"
+    ),
+    species: str | None = Query(None, description="Filter by species"),
+    origin: str | None = Query(None, description="Filter by origin (partial match)"),
 ):
     """
     Fetch characters with filtering, sorting, pagination, and caching.
@@ -100,7 +114,7 @@ def get_characters(
         if sort_field not in ALLOWED_SORT_FIELDS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid sort field. Allowed: {', '.join(ALLOWED_SORT_FIELDS)}"
+                detail=f"Invalid sort field. Allowed: {', '.join(ALLOWED_SORT_FIELDS)}",
             )
 
         # Base query
@@ -108,7 +122,8 @@ def get_characters(
 
         # Apply filters
         if name:
-            query = query.filter(Character.name.ilike(f"%{name}%"))  # case-insensitive partial match
+            # case-insensitive partial match
+            query = query.filter(Character.name.ilike(f"%{name}%"))
         if status:
             query = query.filter(Character.status == status)
         if species:
@@ -149,6 +164,8 @@ def get_characters(
         raise HTTPException(status_code=503, detail="Database not reachable")
     except Exception:
         raise HTTPException(status_code=500, detail="Unexpected error occurred")
+
+
 @app.get("/healthcheck")
 def healthcheck():
     try:

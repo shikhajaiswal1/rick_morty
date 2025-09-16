@@ -8,6 +8,7 @@ from app.models import Character
 
 BASE_URL = "https://rickandmortyapi.com/api/character"
 
+
 def get_filtered_characters():
     db = SessionLocal()
     results = []
@@ -17,7 +18,9 @@ def get_filtered_characters():
         try:
             response = requests.get(f"{BASE_URL}?page={page}", timeout=5)
         except requests.exceptions.RequestException:
-            raise HTTPException(status_code=503, detail="Failed to connect to external API")
+            raise HTTPException(
+                status_code=503, detail="Failed to connect to external API"
+            )
 
         # Handle rate limiting (HTTP 429)
         if response.status_code == 429:
@@ -26,14 +29,16 @@ def get_filtered_characters():
 
         # Handle other non-success codes
         if response.status_code != 200:
-            raise HTTPException(status_code=503, detail="External API returned an error")
+            raise HTTPException(
+                status_code=503, detail="External API returned an error"
+            )
 
         data = response.json()
         for char in data.get("results", []):
             if (
-                    char["species"] == "Human"
-                    and char["status"] == "Alive"
-                    and "Earth" in char["origin"]["name"]
+                char["species"] == "Human"
+                and char["status"] == "Alive"
+                and "Earth" in char["origin"]["name"]
             ):
                 # Save to DB
                 character_obj = Character(
@@ -50,12 +55,14 @@ def get_filtered_characters():
                 except IntegrityError:
                     db.rollback()  # Skip duplicates
 
-                results.append({
-                    "id": char["id"],
-                    "name": char["name"],
-                    "origin": char["origin"]["name"],
-                    "status": char["status"]
-                })
+                results.append(
+                    {
+                        "id": char["id"],
+                        "name": char["name"],
+                        "origin": char["origin"]["name"],
+                        "status": char["status"],
+                    }
+                )
 
         if data["info"]["next"] is None:
             break

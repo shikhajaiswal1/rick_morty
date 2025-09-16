@@ -16,3 +16,4 @@ bandit
 
 # (Optional but useful)
 coverage   # for test coverage reports
+pytest-cov
